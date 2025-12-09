@@ -1,0 +1,5 @@
+storage for the generated charts..
+if i want to integrate this for another person with another db design , how will i do this, and end to end setup
+i want to understadn the way the code i working and written 
+Streamlit UI has been removed in favor of a separate frontend.
+how is the mcp client different from the frontend we are using , i thiught it is still the same ...

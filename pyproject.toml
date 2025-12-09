@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-server-client"
+version = "0.1.0"
+description = "Enterprise Database Query Assistant with MCP"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic-ai-slim[fastmcp,mcp]>=1.18.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    "redis>=5.0.0",
+    "celery>=5.3.0",
+    "rich>=13.7.0",
+    "matplotlib>=3.8.0",
+    "pandas>=2.1.0",
+    "pydantic-settings>=2.1.0",
+    "logfire>=0.20.0",
+    "python-dotenv>=1.0.0",
+    "psycopg2-binary>=2.9.9",
+    "croniter>=6.0.0",
+    "openpyxl>=3.1.5",
+    "xlsxwriter>=3.2.9",
+    "reportlab>=4.4.5",
+    "streamlit>=1.51.0",
+    "psutil>=6.1.0",
+    "python-json-logger>=3.2.1",
+    "watchdog>=6.0.0",
+    "typer>=0.20.0",
+]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["server*", "client*", "shared*"]
+namespaces = false
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "aiosqlite>=0.19.0",
+    "black>=23.12.0",
+    "ruff>=0.1.9",
+]
