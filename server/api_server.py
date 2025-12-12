@@ -680,7 +680,7 @@ async def execute_scheduled_report(report_id: int, user_id: int = 1):
             raise HTTPException(status_code=503, detail="MCP client not initialized")
         
         result = await mcp_client.call_tool(
-            "execute_scheduled_report",
+            "trigger_report_now",
             report_id=report_id,
             user_id=user_id
         )
@@ -879,6 +879,155 @@ async def cleanup_history(days_to_keep: int = 1):
     try:
         result = await mcp_client.call_tool("cleanup_query_history", days_to_keep=days_to_keep)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# === Scheduled Reports Endpoints ===
+
+@app.get("/api/scheduled-reports", response_model=List[ScheduledReportResponse])
+async def list_scheduled_reports(user_id: int = 1):
+    """List all scheduled reports for a user"""
+    global mcp_client
+    
+    if not mcp_client:
+        raise HTTPException(status_code=503, detail="MCP client not initialized")
+    
+    try:
+        result = await mcp_client.call_tool("list_scheduled_reports", user_id=user_id)
+        reports = result.get("reports", [])
+        
+        return [
+            ScheduledReportResponse(
+                id=report["id"],
+                name=report["name"],
+                description=report.get("description", ""),
+                savedQueryId=report["saved_query_id"],
+                scheduleCron=report["cron_schedule"],
+                format=report["format"],
+                recipients=report["recipients"],
+                isActive=report["is_active"],
+                nextRunAt=report.get("next_run_at"),
+                lastRunAt=report.get("last_run_at"),
+                createdAt=report["created_at"]
+            )
+            for report in reports
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/scheduled-reports", response_model=ScheduledReportResponse)
+async def create_scheduled_report(report: CreateReportRequest):
+    """Create a new scheduled report"""
+    global mcp_client
+    
+    if not mcp_client:
+        raise HTTPException(status_code=503, detail="MCP client not initialized")
+    
+    try:
+        result = await mcp_client.call_tool(
+            "create_scheduled_report",
+            name=report.name,
+            description=report.description or "",
+            saved_query_id=report.savedQueryId,
+            cron_schedule=report.scheduleCron,
+            format=report.format,
+            recipients=report.recipients or [],
+            user_id=report.user_id
+        )
+        
+        created_report = result["report"]
+        return ScheduledReportResponse(
+            id=created_report["id"],
+            name=created_report["name"],
+            description=created_report.get("description", ""),
+            savedQueryId=created_report["saved_query_id"],
+            scheduleCron=created_report["cron_schedule"],
+            format=created_report["format"],
+            recipients=created_report["recipients"],
+            isActive=created_report["is_active"],
+            nextRunAt=created_report.get("next_run_at"),
+            lastRunAt=created_report.get("last_run_at"),
+            createdAt=created_report["created_at"]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/scheduled-reports/{report_id}", response_model=ScheduledReportResponse)
+async def update_scheduled_report(report_id: int, report: UpdateReportRequest):
+    """Update an existing scheduled report"""
+    global mcp_client
+    
+    if not mcp_client:
+        raise HTTPException(status_code=503, detail="MCP client not initialized")
+    
+    try:
+        result = await mcp_client.call_tool(
+            "update_scheduled_report",
+            report_id=report_id,
+            name=report.name,
+            description=report.description or "",
+            saved_query_id=report.savedQueryId,
+            cron_schedule=report.scheduleCron,
+            format=report.format,
+            recipients=report.recipients or [],
+            is_active=report.is_active,
+            user_id=report.user_id
+        )
+        
+        updated_report = result["report"]
+        return ScheduledReportResponse(
+            id=updated_report["id"],
+            name=updated_report["name"],
+            description=updated_report.get("description", ""),
+            savedQueryId=updated_report["saved_query_id"],
+            scheduleCron=updated_report["cron_schedule"],
+            format=updated_report["format"],
+            recipients=updated_report["recipients"],
+            isActive=updated_report["is_active"],
+            nextRunAt=updated_report.get("next_run_at"),
+            lastRunAt=updated_report.get("last_run_at"),
+            createdAt=updated_report["created_at"]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/scheduled-reports/{report_id}")
+async def delete_scheduled_report(report_id: int, user_id: int = 1):
+    """Delete a scheduled report"""
+    global mcp_client
+    
+    if not mcp_client:
+        raise HTTPException(status_code=503, detail="MCP client not initialized")
+    
+    try:
+        result = await mcp_client.call_tool(
+            "delete_scheduled_report",
+            report_id=report_id,
+            user_id=user_id
+        )
+        return {"status": "success", "message": result.get("message", "Report deleted successfully")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/scheduled-reports/{report_id}/execute")
+async def execute_scheduled_report(report_id: int, user_id: int = 1):
+    """Execute a scheduled report immediately"""
+    global mcp_client
+    
+    if not mcp_client:
+        raise HTTPException(status_code=503, detail="MCP client not initialized")
+    
+    try:
+        result = await mcp_client.call_tool(
+            "trigger_report_now",
+            report_id=report_id,
+            user_id=user_id
+        )
+        return {
+            "status": "success", 
+            "message": result.get("message", "Report executed successfully"),
+            "execution_id": result.get("execution_id")
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

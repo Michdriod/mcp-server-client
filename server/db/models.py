@@ -51,6 +51,7 @@ class ReportFormat(str, PyEnum):
 
 class ReportStatus(str, PyEnum):
     """Status of scheduled report."""
+    PENDING = "pending"
     ACTIVE = "active"
     PAUSED = "paused"
     FAILED = "failed"
@@ -133,10 +134,12 @@ class ScheduledReport(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     saved_query_id: Mapped[int] = mapped_column(Integer, ForeignKey("saved_queries.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    cron_schedule: Mapped[str] = mapped_column(String(100), nullable=False)
-    format: Mapped[str] = mapped_column(String(20), nullable=False, default="pdf")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    schedule_cron: Mapped[str] = mapped_column(String(100), nullable=False)
+    format: Mapped[ReportFormat] = mapped_column(Enum(ReportFormat), nullable=False, default=ReportFormat.CSV)
     recipients: Mapped[list[str]] = mapped_column(JSON, nullable=False)  # List of email addresses
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus), nullable=False, default=ReportStatus.ACTIVE)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

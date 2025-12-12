@@ -1062,6 +1062,7 @@ async def list_scheduled_reports(user_id: int) -> dict[str, Any]:
                         "id": r.id,
                         "name": r.name,
                         "description": r.description,
+                        "saved_query_id": r.saved_query_id,
                         "schedule_cron": r.schedule_cron,
                         "format": r.format.value,
                         "recipients": r.recipients,
@@ -1240,25 +1241,152 @@ async def trigger_report_now(report_id: int, user_id: int) -> dict[str, Any]:
         >>> result = await trigger_report_now(report_id=5, user_id=1)
         >>> print(f"Report executed: {result['status']}")
     """
-    # Import here to avoid circular dependency
-    from server.scheduler.report_scheduler import execute_report_now
-    
-    try:
-        # Trigger Celery task
-        task = execute_report_now.delay(report_id, user_id)
-        
-        return {
-            "report_id": report_id,
-            "task_id": task.id,
-            "status": "triggered",
-            "message": "Report execution started in background",
-        }
-        
-    except Exception as e:
-        return {
-            "error": f"Failed to trigger report: {str(e)}",
-            "status": "error",
-        }
+    async with get_db_session() as session:
+        try:
+            # Get the scheduled report
+            stmt = select(ScheduledReport).where(
+                ScheduledReport.id == report_id,
+                ScheduledReport.user_id == user_id,
+            )
+            result = await session.execute(stmt)
+            report = result.scalar_one_or_none()
+            
+            if not report:
+                return {
+                    "error": "Report not found or access denied",
+                    "status": "error",
+                }
+            
+            # Check if report has a valid saved query
+            if not report.saved_query_id:
+                return {
+                    "error": "Report has no associated query",
+                    "status": "error",
+                }
+            
+            # Get the saved query
+            stmt = select(SavedQuery).where(SavedQuery.id == report.saved_query_id)
+            result = await session.execute(stmt)
+            saved_query = result.scalar_one_or_none()
+            
+            if not saved_query:
+                return {
+                    "error": "Associated query not found",
+                    "status": "error",
+                }
+            
+            # Execute the query using the global executor instance
+            from server.query.query_executor import query_executor
+            # Use the generated SQL from the saved query
+            query_result = await query_executor.execute_query(
+                saved_query.generated_sql, 
+                user_id, 
+                session
+            )
+            
+            # Generate report file and send emails
+            try:
+                import pandas as pd
+                import os
+                from datetime import datetime
+                from server.scheduler.email_sender import send_report_email
+                
+                # Convert query results to DataFrame
+                df = pd.DataFrame(query_result.get("rows", []))
+                
+                if df.empty:
+                    return {
+                        "error": "Query returned no data to report",
+                        "status": "error",
+                    }
+                
+                # Create reports directory if it doesn't exist
+                reports_dir = "/tmp/reports"
+                os.makedirs(reports_dir, exist_ok=True)
+                
+                # Generate report filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_filename = f"report_{report_id}_{timestamp}.csv"
+                report_path = os.path.join(reports_dir, report_filename)
+                
+                # Save as CSV
+                df.to_csv(report_path, index=False)
+                
+                # Send email to all recipients
+                email_sent_count = 0
+                email_errors = []
+                
+                # Send email with the correct function signature
+                try:
+                    await send_report_email(
+                        recipients=report.recipients,
+                        subject=f"Scheduled Report: {report.name}",
+                        report_name=report.name,
+                        description=report.description or "Scheduled Report",
+                        data=query_result.get("rows", []),
+                        attachment_path=report_path,
+                        format="csv"
+                    )
+                    email_sent_count = len(report.recipients)
+                except Exception as email_error:
+                    email_errors.append(f"Failed to send emails: {str(email_error)}")
+                    print(f"Email error: {email_error}")
+                
+                # Update last run time
+                report.last_run_at = datetime.utcnow()
+                await session.commit()
+                
+                # Clean up temporary file
+                try:
+                    os.remove(report_path)
+                except:
+                    pass
+                
+                # Prepare status message
+                if email_sent_count > 0:
+                    email_status = f"✅ Successfully sent emails to {email_sent_count} recipients"
+                    if email_errors:
+                        email_status += f" (Failed: {len(email_errors)})"
+                else:
+                    email_status = f"❌ Failed to send any emails. Errors: {'; '.join(email_errors[:3])}"
+                
+                return {
+                    "report_id": report_id,
+                    "status": "success",
+                    "message": f"Report executed successfully. Retrieved {query_result.get('row_count', 0)} rows. {email_status}",
+                    "execution_time": query_result.get("execution_time_ms"),
+                    "row_count": query_result.get("row_count"),
+                    "email_status": email_status,
+                    "emails_sent": email_sent_count,
+                    "email_errors": email_errors,
+                    "recipients_count": len(report.recipients)
+                }
+                
+            except Exception as email_error:
+                # If email fails, still update the report run time but note the email failure
+                report.last_run_at = datetime.utcnow()
+                await session.commit()
+                
+                return {
+                    "report_id": report_id,
+                    "status": "partial_success",
+                    "message": f"Report executed but email failed. Retrieved {query_result.get('row_count', 0)} rows.",
+                    "execution_time": query_result.get("execution_time_ms"),
+                    "row_count": query_result.get("row_count"),
+                    "email_status": f"❌ Email failed: {str(email_error)}",
+                    "emails_sent": 0,
+                    "recipients_count": len(report.recipients)
+                }
+            
+        except Exception as e:
+            await session.rollback()
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Report execution error: {error_details}")  # For debugging
+            return {
+                "error": f"Failed to execute report: {str(e)}",
+                "status": "error",
+            }
 
 
 if __name__ == "__main__":

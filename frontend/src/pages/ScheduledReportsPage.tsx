@@ -44,6 +44,7 @@ import {
 } from '@/lib/api';
 import { SavedQuery } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 // Cron expression presets
 const CRON_PRESETS = [
@@ -77,6 +78,15 @@ export default function ScheduledReportsPage() {
     is_active: true,
   });
 
+  // Custom cron state
+  const [customCron, setCustomCron] = useState({
+    hour: '9',
+    minute: '0',
+    frequency: 'daily',
+    selectedDays: [] as number[],
+    dayOfMonth: '1'
+  });
+
   useEffect(() => {
     loadData();
   }, []);
@@ -98,6 +108,58 @@ export default function ScheduledReportsPage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper functions for custom cron
+  const updateCustomCron = (field: string, value: string) => {
+    setCustomCron(prev => {
+      const newCron = { ...prev, [field]: value };
+      
+      // Update the cron expression when any field changes
+      const cronExpression = generateCronExpression(newCron);
+      setFormData(prevForm => ({ ...prevForm, schedule_cron: cronExpression }));
+      
+      return newCron;
+    });
+  };
+
+  const toggleDay = (dayIndex: number) => {
+    setCustomCron(prev => {
+      const selectedDays = prev.selectedDays.includes(dayIndex)
+        ? prev.selectedDays.filter(d => d !== dayIndex)
+        : [...prev.selectedDays, dayIndex].sort();
+      
+      const newCron = { ...prev, selectedDays };
+      const cronExpression = generateCronExpression(newCron);
+      setFormData(prevForm => ({ ...prevForm, schedule_cron: cronExpression }));
+      
+      return newCron;
+    });
+  };
+
+  const generateCronExpression = (cron: typeof customCron) => {
+    const minute = cron.minute || '0';
+    const hour = cron.hour || '9';
+    
+    switch (cron.frequency) {
+      case 'daily':
+        return `${minute} ${hour} * * *`;
+      case 'weekly':
+        const dayOfWeek = cron.selectedDays.length > 0 ? cron.selectedDays.join(',') : '1';
+        return `${minute} ${hour} * * ${dayOfWeek}`;
+      case 'monthly':
+        const day = cron.dayOfMonth || '1';
+        return `${minute} ${hour} ${day} * *`;
+      case 'weekdays':
+        return `${minute} ${hour} * * 1-5`;
+      case 'weekends':
+        return `${minute} ${hour} * * 0,6`;
+      case 'custom-days':
+        const customDays = cron.selectedDays.length > 0 ? cron.selectedDays.join(',') : '*';
+        return `${minute} ${hour} * * ${customDays}`;
+      default:
+        return `${minute} ${hour} * * *`;
     }
   };
 
@@ -219,16 +281,31 @@ export default function ScheduledReportsPage() {
   };
 
   const openEditDialog = (report: ScheduledReport) => {
+    const cronPresetValue = CRON_PRESETS.find((p) => p.value === report.scheduleCron)?.value || 'custom';
+    
     setFormData({
-      name: report.name,
-      description: report.description,
-      saved_query_id: report.savedQueryId,
-      schedule_cron: report.scheduleCron,
-      cronPreset: CRON_PRESETS.find((p) => p.value === report.scheduleCron)?.value || 'custom',
-      format: report.format,
-      recipients: report.recipients.join(', '),
-      is_active: report.isActive,
+      name: report.name || '',
+      description: report.description || '',
+      saved_query_id: report.savedQueryId || 0,
+      schedule_cron: report.scheduleCron || '0 9 * * *',
+      cronPreset: cronPresetValue,
+      format: report.format || 'csv',
+      recipients: Array.isArray(report.recipients) ? report.recipients.join(', ') : '',
+      is_active: report.isActive ?? true,
     });
+
+    // Reset custom cron state to match the current schedule
+    if (cronPresetValue === 'custom') {
+      const cronParts = (report.scheduleCron || '0 9 * * *').split(' ');
+      setCustomCron({
+        minute: cronParts[0] || '0',
+        hour: cronParts[1] || '9',
+        frequency: 'daily', // Will be updated by parsing logic
+        selectedDays: [],
+        dayOfMonth: cronParts[2] !== '*' ? cronParts[2] : '1'
+      });
+    }
+    
     setEditingReport(report);
     setShowDialog(true);
   };
@@ -275,15 +352,18 @@ export default function ScheduledReportsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
+      <AppLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <AppLayout>
+      <div className="space-y-6 p-6">
+        <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold mb-2">Scheduled Reports</h1>
           <p className="text-muted-foreground">
@@ -475,20 +555,97 @@ export default function ScheduledReportsPage() {
             </div>
 
             {formData.cronPreset === 'custom' && (
-              <div>
-                <Label htmlFor="cron">Custom Cron Expression *</Label>
-                <Input
-                  id="cron"
-                  value={formData.schedule_cron}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, schedule_cron: e.target.value }))
-                  }
-                  placeholder="0 9 * * *"
-                  className="font-mono"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Format: minute hour day month weekday (e.g., "0 9 * * *" = daily at 9 AM)
-                </p>
+              <div className="space-y-4 p-4 border rounded-lg bg-slate-50">
+                <Label className="text-sm font-medium">Custom Schedule *</Label>
+                
+                {/* Time Selection */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="hour" className="text-xs">Hour (0-23)</Label>
+                    <Input
+                      id="hour"
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={customCron.hour}
+                      onChange={(e) => updateCustomCron('hour', e.target.value)}
+                      placeholder="9"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="minute" className="text-xs">Minute (0-59)</Label>
+                    <Input
+                      id="minute"
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={customCron.minute}
+                      onChange={(e) => updateCustomCron('minute', e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                {/* Frequency Selection */}
+                <div>
+                  <Label className="text-xs">Frequency</Label>
+                  <Select value={customCron.frequency} onValueChange={(value) => updateCustomCron('frequency', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="weekdays">Weekdays (Mon-Fri)</SelectItem>
+                      <SelectItem value="weekends">Weekends (Sat-Sun)</SelectItem>
+                      <SelectItem value="custom-days">Custom Days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Day of Week Selection */}
+                {(customCron.frequency === 'weekly' || customCron.frequency === 'custom-days') && (
+                  <div>
+                    <Label className="text-xs">Day of Week</Label>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                        <Button
+                          key={day}
+                          type="button"
+                          variant={customCron.selectedDays.includes(index) ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => toggleDay(index)}
+                          className="text-xs"
+                        >
+                          {day}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Day of Month Selection */}
+                {customCron.frequency === 'monthly' && (
+                  <div>
+                    <Label htmlFor="dayOfMonth" className="text-xs">Day of Month (1-31)</Label>
+                    <Input
+                      id="dayOfMonth"
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={customCron.dayOfMonth}
+                      onChange={(e) => updateCustomCron('dayOfMonth', e.target.value)}
+                      placeholder="1"
+                    />
+                  </div>
+                )}
+
+                {/* Generated Cron Expression Display */}
+                <div className="bg-white p-2 rounded border">
+                  <Label className="text-xs text-muted-foreground">Generated Cron Expression:</Label>
+                  <p className="font-mono text-sm mt-1">{formData.schedule_cron}</p>
+                </div>
               </div>
             )}
 
@@ -553,6 +710,7 @@ export default function ScheduledReportsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
