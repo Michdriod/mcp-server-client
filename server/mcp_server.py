@@ -7,9 +7,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
+import os
+from pathlib import Path
 
 # Load environment variables from .env file BEFORE any other imports
-load_dotenv()
+# Get the project root directory (parent of server directory)
+project_root = Path(__file__).parent.parent
+env_path = project_root / '.env'
+load_dotenv(dotenv_path=env_path)
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -24,7 +29,7 @@ from server.tools.exporters import export_to_csv, export_to_excel, export_to_pdf
 from sqlalchemy import select, delete
 from shared.config import settings
 from croniter import croniter
-from datetime import datetime
+from datetime import datetime, UTC
 
 from dotenv import load_dotenv
 
@@ -980,7 +985,7 @@ async def create_scheduled_report(
         try:
             # Validate cron expression
             try:
-                cron = croniter(schedule_cron)
+                cron = croniter(schedule_cron, datetime.now(UTC).replace(tzinfo=None))
                 next_run = cron.get_next(datetime)
             except Exception as e:
                 return {
@@ -1142,7 +1147,7 @@ async def update_scheduled_report(
                 report.description = description
             if schedule_cron is not None:
                 try:
-                    cron = croniter(schedule_cron)
+                    cron = croniter(schedule_cron, datetime.now(UTC).replace(tzinfo=None))
                     report.schedule_cron = schedule_cron
                     report.next_run_at = cron.get_next(datetime)
                 except Exception as e:
@@ -1163,7 +1168,7 @@ async def update_scheduled_report(
             if is_active is not None:
                 report.is_active = is_active
             
-            report.updated_at = datetime.utcnow()
+            report.updated_at = datetime.now(UTC).replace(tzinfo=None)
             await session.commit()
             
             return {
@@ -1241,6 +1246,8 @@ async def trigger_report_now(report_id: int, user_id: int) -> dict[str, Any]:
         >>> result = await trigger_report_now(report_id=5, user_id=1)
         >>> print(f"Report executed: {result['status']}")
     """
+    print(f"🔥 TRIGGER_REPORT_NOW CALLED: report_id={report_id}, user_id={user_id}")
+    
     async with get_db_session() as session:
         try:
             # Get the scheduled report
@@ -1286,10 +1293,29 @@ async def trigger_report_now(report_id: int, user_id: int) -> dict[str, Any]:
             
             # Generate report file and send emails
             try:
+                print(f"DEBUG: Starting email generation for report {report_id}")
                 import pandas as pd
                 import os
                 from datetime import datetime
-                from server.scheduler.email_sender import send_report_email
+                
+                # Import email sender with error handling
+                try:
+                    from server.scheduler.email_sender import send_report_email
+                    print("DEBUG: Email sender imported successfully")
+                except Exception as import_error:
+                    print(f"DEBUG: Failed to import email sender: {import_error}")
+                    # Fallback - just update the report without sending email
+                    report.last_run_at = datetime.now(UTC).replace(tzinfo=None)
+                    await session.commit()
+                    return {
+                        "report_id": report_id,
+                        "status": "success", 
+                        "message": f"Report executed but email disabled due to import error. Retrieved {query_result.get('row_count', 0)} rows.",
+                        "execution_time": query_result.get("execution_time_ms"),
+                        "row_count": query_result.get("row_count"),
+                        "email_status": f"❌ Email disabled: {str(import_error)}",
+                        "recipients_count": len(report.recipients)
+                    }
                 
                 # Convert query results to DataFrame
                 df = pd.DataFrame(query_result.get("rows", []))
@@ -1318,7 +1344,11 @@ async def trigger_report_now(report_id: int, user_id: int) -> dict[str, Any]:
                 
                 # Send email with the correct function signature
                 try:
-                    await send_report_email(
+                    # Debug: Check email settings
+                    from shared.config import settings
+                    print(f"DEBUG: Email settings - HOST: {settings.email_smtp_host}, USER: {settings.email_username}, FROM_NAME: {getattr(settings, 'email_from_name', None)}")
+                    
+                    email_result = await send_report_email(
                         recipients=report.recipients,
                         subject=f"Scheduled Report: {report.name}",
                         report_name=report.name,
@@ -1327,13 +1357,22 @@ async def trigger_report_now(report_id: int, user_id: int) -> dict[str, Any]:
                         attachment_path=report_path,
                         format="csv"
                     )
-                    email_sent_count = len(report.recipients)
+                    
+                    print(f"DEBUG: Email result: {email_result}")
+                    
+                    if email_result.get("status") == "success":
+                        email_sent_count = len(report.recipients)
+                    else:
+                        email_errors.append(f"Email failed: {email_result.get('error', 'Unknown error')}")
+                        
                 except Exception as email_error:
                     email_errors.append(f"Failed to send emails: {str(email_error)}")
-                    print(f"Email error: {email_error}")
+                    print(f"DEBUG: Email exception: {email_error}")
+                    import traceback
+                    print(f"DEBUG: Full traceback: {traceback.format_exc()}")
                 
                 # Update last run time
-                report.last_run_at = datetime.utcnow()
+                report.last_run_at = datetime.now(UTC).replace(tzinfo=None)
                 await session.commit()
                 
                 # Clean up temporary file
@@ -1364,7 +1403,7 @@ async def trigger_report_now(report_id: int, user_id: int) -> dict[str, Any]:
                 
             except Exception as email_error:
                 # If email fails, still update the report run time but note the email failure
-                report.last_run_at = datetime.utcnow()
+                report.last_run_at = datetime.now(UTC).replace(tzinfo=None)
                 await session.commit()
                 
                 return {

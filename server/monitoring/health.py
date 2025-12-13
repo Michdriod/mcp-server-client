@@ -2,7 +2,7 @@
 Health Check and Monitoring Endpoints
 """
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, Any
 import psutil
 import redis
@@ -17,7 +17,7 @@ async def health_check() -> Dict[str, Any]:
     """
     health = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "checks": {}
     }
     
@@ -66,9 +66,9 @@ async def readiness_check() -> Dict[str, Any]:
         redis_client = get_redis_client()
         await redis_client.ping()
         
-        return {"status": "ready", "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "ready", "timestamp": datetime.now(UTC).isoformat()}
     except Exception as e:
-        return {"status": "not_ready", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
+        return {"status": "not_ready", "error": str(e), "timestamp": datetime.now(UTC).isoformat()}
 
 
 async def liveness_check() -> Dict[str, Any]:
@@ -77,7 +77,7 @@ async def liveness_check() -> Dict[str, Any]:
     """
     return {
         "status": "alive",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "uptime_seconds": time.time() - psutil.boot_time()
     }
 

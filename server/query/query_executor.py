@@ -2,7 +2,7 @@
 Query executor with timeout, pagination, and error handling.
 """
 import asyncio
-from datetime import datetime
+from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -44,7 +44,7 @@ class QueryExecutor:
             PermissionError: If user lacks permission
             TimeoutError: If query exceeds timeout
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(UTC)
         
         # 1. Validate SQL
         is_valid, error_msg = validator.validate_query(sql, allow_write=False)
@@ -121,7 +121,7 @@ class QueryExecutor:
             rows.append(row_dict)
         
         # 7. Calculate execution time
-        execution_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        execution_time = (datetime.now(UTC) - start_time).total_seconds() * 1000
         
         # 8. Cache results
         if cache_results and rows:

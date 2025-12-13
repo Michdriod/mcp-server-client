@@ -2,7 +2,7 @@
 Export query results to various formats (CSV, Excel, PDF).
 """
 import csv
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +38,7 @@ async def export_to_csv(
     
     # Generate filename if not provided
     if filename is None:
-        filename = f"export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        filename = f"export_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
     
     filepath = EXPORT_DIR / f"{filename}.csv"
     
@@ -74,7 +74,7 @@ async def export_to_excel(
     
     # Generate filename if not provided
     if filename is None:
-        filename = f"export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        filename = f"export_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
     
     filepath = EXPORT_DIR / f"{filename}.xlsx"
     
@@ -145,7 +145,7 @@ async def export_to_pdf(
     
     # Generate filename if not provided
     if filename is None:
-        filename = f"export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        filename = f"export_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
     
     filepath = EXPORT_DIR / f"{filename}.pdf"
     
@@ -177,7 +177,7 @@ async def export_to_pdf(
         elements.append(Spacer(1, 12))
     
     # Add metadata
-    metadata_text = f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}<br/>Total Rows: {len(data)}"
+    metadata_text = f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}<br/>Total Rows: {len(data)}"
     elements.append(Paragraph(metadata_text, styles["Normal"]))
     elements.append(Spacer(1, 20))
     
@@ -248,7 +248,7 @@ async def export_to_json(
     
     # Generate filename if not provided
     if filename is None:
-        filename = f"export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        filename = f"export_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
     
     filepath = EXPORT_DIR / f"{filename}.json"
     

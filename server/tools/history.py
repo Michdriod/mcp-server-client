@@ -1,7 +1,7 @@
 """
 Query history tracking and retrieval.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any
 
 from sqlalchemy import select, func, desc
@@ -161,7 +161,7 @@ class HistoryManager:
         Returns:
             List of popular queries with execution counts
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
         
         stmt = (
             select(
@@ -211,7 +211,7 @@ class HistoryManager:
         Returns:
             Dictionary with user statistics
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
         
         # Total queries
         total_stmt = select(func.count(QueryHistory.id)).where(

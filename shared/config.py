@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     email_username: str | None = Field(default=None, description="SMTP username")
     email_password: str | None = Field(default=None, description="SMTP password")
     email_from: str = Field(default="noreply@queryassistant.com", description="From email address")
+    email_from_name: str | None = Field(default=None, description="Display name for email sender")
+    email_from_address: str | None = Field(default=None, description="Email address for sender")
     
     # MCP Server Configuration
     mcp_server_host: str = Field(default="0.0.0.0", description="MCP server host")

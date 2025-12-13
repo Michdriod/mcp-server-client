@@ -688,10 +688,15 @@ async def execute_scheduled_report(report_id: int, user_id: int = 1):
         if result.get("error"):
             raise HTTPException(status_code=400, detail=result["error"])
         
+        # Return detailed response format like the newer endpoint
         return {
             "status": "success",
-            "executionTime": result.get("execution_time_ms"),
-            "rowCount": result.get("row_count")
+            "message": result.get("message", "Report executed successfully"),
+            "execution_time": result.get("execution_time"),
+            "row_count": result.get("row_count"),
+            "email_status": result.get("email_status", "Unknown"),
+            "emails_sent": result.get("emails_sent", 0),
+            "recipients_count": result.get("recipients_count", 0)
         }
     
     except HTTPException:
@@ -1009,27 +1014,7 @@ async def delete_scheduled_report(report_id: int, user_id: int = 1):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/scheduled-reports/{report_id}/execute")
-async def execute_scheduled_report(report_id: int, user_id: int = 1):
-    """Execute a scheduled report immediately"""
-    global mcp_client
-    
-    if not mcp_client:
-        raise HTTPException(status_code=503, detail="MCP client not initialized")
-    
-    try:
-        result = await mcp_client.call_tool(
-            "trigger_report_now",
-            report_id=report_id,
-            user_id=user_id
-        )
-        return {
-            "status": "success", 
-            "message": result.get("message", "Report executed successfully"),
-            "execution_id": result.get("execution_id")
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Error handler
 @app.exception_handler(Exception)

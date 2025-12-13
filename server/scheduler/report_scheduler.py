@@ -2,7 +2,7 @@
 Report scheduler for executing scheduled queries and generating reports.
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any
 
 from celery import shared_task
@@ -37,7 +37,7 @@ async def _check_and_run_scheduled_reports_async():
     try:
         async with db_connection.get_session() as session:
             # Find active reports that are due to run
-            now = datetime.utcnow()
+            now = datetime.now(UTC).replace(tzinfo=None)
             
             stmt = select(ScheduledReport).where(
                 and_(
@@ -124,7 +124,7 @@ async def _execute_scheduled_report(report: ScheduledReport, session):
 
 async def _export_report(report: ScheduledReport, data: list[dict], format: str) -> str:
     """Export report data to the specified format."""
-    filename = f"{report.name.replace(' ', '_')}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    filename = f"{report.name.replace(' ', '_')}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
     
     if format == "csv":
         return await export_to_csv(data, filename)
@@ -178,7 +178,7 @@ async def _execute_report_now_async(report_id: int, user_id: int):
                 await _execute_scheduled_report(report, session)
                 
                 # Update last run time
-                report.last_run_at = datetime.utcnow()
+                report.last_run_at = datetime.now(UTC).replace(tzinfo=None)
                 report.status = ReportStatus.COMPLETED
                 await session.commit()
                 
@@ -221,7 +221,7 @@ async def _cleanup_old_query_history_async(days_to_keep: int):
     
     try:
         async with db_connection.get_session() as session:
-            cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+            cutoff_date = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days_to_keep)
             
             # Delete old records
             stmt = select(QueryHistory).where(

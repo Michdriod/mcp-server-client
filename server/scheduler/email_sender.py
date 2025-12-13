@@ -39,7 +39,13 @@ async def send_report_email(
     try:
         # Create message
         msg = MIMEMultipart("alternative")
-        msg["From"] = settings.email_from
+        
+        # Set From field with display name if available
+        if settings.email_from_name and settings.email_from_address:
+            msg["From"] = f"{settings.email_from_name} <{settings.email_from_address}>"
+        else:
+            msg["From"] = settings.email_from
+            
         msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
         
@@ -64,9 +70,18 @@ async def send_report_email(
                 server.starttls()
             
             if settings.email_username and settings.email_password:
+                # Debug logging - write to file since print might not work in MCP context
+                import sys
+                sys.stderr.write(f"DEBUG EMAIL: Attempting login with username: {settings.email_username}\n")
+                sys.stderr.write(f"DEBUG EMAIL: Password length: {len(settings.email_password)} chars\n")
+                sys.stderr.write(f"DEBUG EMAIL: Password first 10 chars: {repr(settings.email_password[:10])}\n")
+                sys.stderr.flush()
                 server.login(settings.email_username, settings.email_password)
+                sys.stderr.write("DEBUG EMAIL: Login successful!\n")
+                sys.stderr.flush()
             
             server.send_message(msg)
+            print(f"DEBUG EMAIL: Message sent to {recipients}")
         
         return {
             "status": "success",
@@ -174,5 +189,5 @@ def _attach_file(msg: MIMEMultipart, filepath: str) -> None:
 
 def _get_current_timestamp() -> str:
     """Get current timestamp as formatted string."""
-    from datetime import datetime
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    from datetime import datetime, UTC
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
