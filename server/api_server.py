@@ -895,7 +895,7 @@ async def get_table_schema(table_name: str):
                 }
                 for col in result.get("columns", [])
             ],
-            "rowCount": 0,  # We'll calculate this separately if needed
+            "rowCount": result.get("row_count", 0),
             "sampleData": []
         }
     

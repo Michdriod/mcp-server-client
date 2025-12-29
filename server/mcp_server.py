@@ -324,11 +324,17 @@ async def get_schema_info(table_name: str) -> dict[str, Any]:
                 for row in result.fetchall()
             ]
             
+            # Get row count for the table
+            count_query = text(f"SELECT COUNT(*) FROM {table_name}")
+            count_result = await session.execute(count_query)
+            row_count = count_result.scalar() or 0
+            
             return {
                 "table_name": table_name,
                 "columns": columns,
                 "primary_keys": primary_keys,
                 "foreign_keys": foreign_keys,
+                "row_count": row_count,
                 "status": "success",
             }
             
