@@ -26,7 +26,7 @@ from server.db.models import SavedQuery, QueryStatus, ScheduledReport, ReportFor
 from server.tools.chart_generator import chart_generator, ChartType
 from server.tools.history import history_manager
 from server.tools.exporters import export_to_csv, export_to_excel, export_to_pdf, export_to_json
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from shared.config import settings
 from croniter import croniter
 from datetime import datetime, UTC
@@ -250,7 +250,7 @@ async def get_schema_info(table_name: str) -> dict[str, Any]:
     async with get_db_session() as session:
         try:
             # Get column information
-            columns_query = """
+            columns_query = text("""
                 SELECT 
                     column_name,
                     data_type,
@@ -261,7 +261,7 @@ async def get_schema_info(table_name: str) -> dict[str, Any]:
                 WHERE table_schema = 'public'
                     AND table_name = :table_name
                 ORDER BY ordinal_position
-            """
+            """)
             
             result = await session.execute(
                 columns_query,
@@ -285,7 +285,7 @@ async def get_schema_info(table_name: str) -> dict[str, Any]:
                 }
             
             # Get primary keys
-            pk_query = """
+            pk_query = text("""
                 SELECT kcu.column_name
                 FROM information_schema.table_constraints tc
                 JOIN information_schema.key_column_usage kcu
@@ -293,13 +293,13 @@ async def get_schema_info(table_name: str) -> dict[str, Any]:
                 WHERE tc.table_schema = 'public'
                     AND tc.table_name = :table_name
                     AND tc.constraint_type = 'PRIMARY KEY'
-            """
+            """)
             
             result = await session.execute(pk_query, {"table_name": table_name})
             primary_keys = [row.column_name for row in result.fetchall()]
             
             # Get foreign keys
-            fk_query = """
+            fk_query = text("""
                 SELECT
                     kcu.column_name,
                     ccu.table_name AS foreign_table_name,
@@ -312,7 +312,7 @@ async def get_schema_info(table_name: str) -> dict[str, Any]:
                 WHERE tc.table_schema = 'public'
                     AND tc.table_name = :table_name
                     AND tc.constraint_type = 'FOREIGN KEY'
-            """
+            """)
             
             result = await session.execute(fk_query, {"table_name": table_name})
             foreign_keys = [
@@ -357,28 +357,38 @@ async def list_tables() -> dict[str, Any]:
     """
     async with get_db_session() as session:
         try:
-            query = """
+            query = text("""
                 SELECT 
                     tablename as table_name,
                     schemaname as schema_name
                 FROM pg_catalog.pg_tables
                 WHERE schemaname = 'public'
                 ORDER BY tablename
-            """
+            """)
             
             result = await session.execute(query)
             tables = []
             
             for row in result.fetchall():
                 # Get row count for each table
-                count_query = f"SELECT COUNT(*) FROM {row.table_name}"
+                count_query = text(f"SELECT COUNT(*) FROM {row.table_name}")
                 count_result = await session.execute(count_query)
                 row_count = count_result.scalar()
+                
+                # Get column count
+                column_query = text("""
+                    SELECT COUNT(*) 
+                    FROM information_schema.columns 
+                    WHERE table_schema = 'public' AND table_name = :table_name
+                """)
+                column_result = await session.execute(column_query, {"table_name": row.table_name})
+                column_count = column_result.scalar()
                 
                 tables.append({
                     "name": row.table_name,
                     "schema": row.schema_name,
                     "row_count": row_count,
+                    "column_count": column_count,
                 })
             
             return {

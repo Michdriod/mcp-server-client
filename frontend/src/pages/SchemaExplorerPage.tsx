@@ -5,6 +5,7 @@ import { listTables, getTableSchema, TableInfo, TableSchema } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 interface GlobalSearchResult {
   tableName: string;
@@ -186,13 +187,14 @@ export default function SchemaExplorerPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Database Schema</h1>
-        <p className="text-muted-foreground">
-          Explore your database structure, tables, and relationships
-        </p>
-      </div>
+    <AppLayout>
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Database Schema</h1>
+          <p className="text-muted-foreground">
+            Explore your database structure, tables, and relationships
+          </p>
+        </div>
 
       {/* Global Search Bar */}
       <Card>
@@ -498,6 +500,7 @@ export default function SchemaExplorerPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

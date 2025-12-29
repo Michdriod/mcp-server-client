@@ -3,3 +3,22 @@ if i want to integrate this for another person with another db design , how will
 i want to understadn the way the code i working and written 
 Streamlit UI has been removed in favor of a separate frontend.
 how is the mcp client different from the frontend we are using , i thiught it is still the same ...
+
+
+
+
+so i want to understand how the user: admin, analyst and others , how are they working presently and how is it affecting the system....
+
+
+# List all users and their password status
+python update_passwords.py list
+
+# Update specific user passwords  
+python update_passwords.py admin admin123
+python update_passwords.py analyst data456
+python update_passwords.py viewer view789
+
+
+cd /Users/mac/Desktop/mcp-server-client
+python update_passwords.py list
+python update_passwords.py admin [new_password]

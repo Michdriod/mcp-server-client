@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import UserMenu from '@/components/UserMenu';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -35,6 +37,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const location = useLocation();
+  const { user } = useAuth();
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -94,7 +97,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           </nav>
 
           {/* Footer */}
-          <div className="p-4 border-t border-border">
+          <div className="p-4 border-t border-border space-y-2">
+            {/* User Menu */}
+            {user && <UserMenu />}
+            
+            {/* Dark Mode Toggle */}
             <Button
               variant="ghost"
               size="sm"
@@ -115,10 +122,16 @@ export function AppLayout({ children }: AppLayoutProps) {
           <Button variant="ghost" size="icon-sm" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <Database className="w-5 h-5 text-primary" />
             <span className="font-semibold">QueryAI</span>
           </div>
+          {/* Mobile User Menu */}
+          {user && (
+            <div className="flex-shrink-0">
+              <UserMenu />
+            </div>
+          )}
         </header>
 
         {/* Page content */}

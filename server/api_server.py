@@ -4,7 +4,7 @@ FastAPI REST Server for Database Query Assistant
 Exposes MCP tools as REST endpoints for the frontend.
 Uses a single persistent MCP client connection for efficiency.
 """
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -14,10 +14,16 @@ from contextlib import asynccontextmanager
 import asyncio
 from datetime import datetime
 import os
-
-# Import MCP client for backend operations
 import sys
+
+# Add the server directory to Python path for imports
+sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Authentication imports  
+from auth.auth_routes import router as auth_router, get_current_user_dependency
+from auth.authentication import check_user_permission
+from db.models import User
 from client.mcp_client import QueryAssistantClient
 from shared.config import settings
 
@@ -83,11 +89,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include authentication routes
+app.include_router(auth_router, prefix="/api")
+
 # === Request/Response Models ===
 
 class QueryRequest(BaseModel):
     question: str
-    user_id: int = Field(default=1, description="User ID (1=Admin, 2=Analyst, 3=Viewer)")
     output_format: Optional[str] = Field(default="table", description="table, json, or csv")
     chart_type: Optional[str] = Field(default=None, description="bar, line, pie, scatter, or null")
 
@@ -108,7 +116,6 @@ class QueryResponse(BaseModel):
 class SaveQueryRequest(BaseModel):
     name: str
     query: str
-    user_id: int = 1
     description: Optional[str] = None
 
 class SavedQueryResponse(BaseModel):
@@ -140,7 +147,6 @@ class DashboardStatsResponse(BaseModel):
 class ExportRequest(BaseModel):
     query_id: int
     format: str = Field(default="csv", description="csv, json, or excel")
-    user_id: int = 1
 
 class SchemaInfoRequest(BaseModel):
     table_name: str
@@ -160,7 +166,6 @@ class CreateReportRequest(BaseModel):
     schedule_cron: str = Field(description="Cron expression like '0 9 * * *'")
     format: str = Field(default="csv", description="csv, excel, or pdf")
     recipients: List[str] = Field(description="List of email addresses")
-    user_id: int = 1
 
 class UpdateReportRequest(BaseModel):
     name: Optional[str] = None
@@ -169,7 +174,6 @@ class UpdateReportRequest(BaseModel):
     format: Optional[str] = None
     recipients: Optional[List[str]] = None
     is_active: Optional[bool] = None
-    user_id: int = 1
 
 class ScheduledReportResponse(BaseModel):
     id: int
@@ -205,7 +209,10 @@ async def root():
     }
 
 @app.post("/api/query", response_model=QueryResponse)
-async def execute_query(request: QueryRequest):
+async def execute_query(
+    request: QueryRequest, 
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Execute a natural language database query"""
     global mcp_client
     
@@ -213,10 +220,10 @@ async def execute_query(request: QueryRequest):
         raise HTTPException(status_code=503, detail="MCP client not initialized")
     
     try:
-        # Execute the query using persistent MCP client
+        # Execute the query using persistent MCP client with authenticated user
         result = await mcp_client.query_database(
             request.question,
-            request.user_id
+            current_user.id  # Use authenticated user's ID
         )
         
         # Debug logging
@@ -276,7 +283,7 @@ async def execute_query(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/saved-queries")
-async def list_saved_queries(user_id: int = 1):
+async def list_saved_queries(current_user: User = Depends(get_current_user_dependency)):
     """List all saved queries for a user"""
     global mcp_client
     
@@ -284,7 +291,7 @@ async def list_saved_queries(user_id: int = 1):
         raise HTTPException(status_code=503, detail="MCP client not initialized")
     
     try:
-        result = await mcp_client.list_saved_queries(user_id)
+        result = await mcp_client.list_saved_queries(current_user.id)
         
         queries = []
         if result and 'queries' in result:
@@ -304,7 +311,10 @@ async def list_saved_queries(user_id: int = 1):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/saved-queries")
-async def save_query(request: SaveQueryRequest):
+async def save_query(
+    request: SaveQueryRequest, 
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Save a query for later use"""
     global mcp_client
     
@@ -315,7 +325,7 @@ async def save_query(request: SaveQueryRequest):
         # Execute the query first to get the SQL
         query_result = await mcp_client.query_database(
             request.query,
-            request.user_id
+            current_user.id
         )
         
         # Get the generated SQL from the query result
@@ -327,7 +337,7 @@ async def save_query(request: SaveQueryRequest):
             description=request.description or "",
             question=request.query,
             sql=sql,
-            user_id=request.user_id
+            user_id=current_user.id
         )
         
         # Extract query_id from the result
@@ -347,7 +357,10 @@ async def save_query(request: SaveQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/saved-queries/{query_id}")
-async def delete_saved_query(query_id: int, user_id: int = 1):
+async def delete_saved_query(
+    query_id: int,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Delete a saved query"""
     global mcp_client
     
@@ -355,7 +368,7 @@ async def delete_saved_query(query_id: int, user_id: int = 1):
         raise HTTPException(status_code=503, detail="MCP client not initialized")
     
     try:
-        result = await mcp_client.delete_saved_query(query_id, user_id)
+        result = await mcp_client.delete_saved_query(query_id, current_user.id)
         
         if result.get('status') == 'error':
             raise HTTPException(status_code=404, detail=result.get('error', 'Query not found'))
@@ -368,7 +381,10 @@ async def delete_saved_query(query_id: int, user_id: int = 1):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history")
-async def get_query_history(user_id: int = 1, days: int = 30):
+async def get_query_history(
+    days: int = 30,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Get query execution history"""
     global mcp_client
     
@@ -379,7 +395,7 @@ async def get_query_history(user_id: int = 1, days: int = 30):
         # MCP method expects (user_id, limit, status), not days
         # Use days * 2 as a rough estimate for limit (assuming ~2 queries per day)
         limit = max(20, days * 2)
-        result = await mcp_client.get_query_history(user_id, limit=limit, status=None)
+        result = await mcp_client.get_query_history(current_user.id, limit=limit, status=None)
         
         print(f"DEBUG - History result: {result}")
         
@@ -403,7 +419,7 @@ async def get_query_history(user_id: int = 1, days: int = 30):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/dashboard/stats", response_model=DashboardStatsResponse)
-async def get_dashboard_stats(user_id: int = 1):
+async def get_dashboard_stats(current_user: User = Depends(get_current_user_dependency)):
     """Get dashboard statistics"""
     global mcp_client
     
@@ -412,16 +428,16 @@ async def get_dashboard_stats(user_id: int = 1):
     
     try:
         # Get basic stats
-        stats = await mcp_client.get_user_statistics(user_id)
+        stats = await mcp_client.get_user_statistics(current_user.id)
         
         # Execute simple aggregate queries for dashboard
-        customers = await mcp_client.query_database("SELECT COUNT(*) as count FROM customers", user_id)
+        customers = await mcp_client.query_database("SELECT COUNT(*) as count FROM customers", current_user.id)
         print(f"DEBUG - Customers response: {customers}")
-        orders = await mcp_client.query_database("SELECT COUNT(*) as count FROM orders", user_id)
+        orders = await mcp_client.query_database("SELECT COUNT(*) as count FROM orders", current_user.id)
         print(f"DEBUG - Orders response: {orders}")
-        revenue = await mcp_client.query_database("SELECT SUM(amount) as total FROM orders", user_id)
+        revenue = await mcp_client.query_database("SELECT SUM(amount) as total FROM orders", current_user.id)
         print(f"DEBUG - Revenue response: {revenue}")
-        pending = await mcp_client.query_database("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'", user_id)
+        pending = await mcp_client.query_database("SELECT COUNT(*) as count FROM orders WHERE status = 'pending'", current_user.id)
         print(f"DEBUG - Pending response: {pending}")
         
         return DashboardStatsResponse(
@@ -545,7 +561,10 @@ async def get_chart(filename: str):
 # === Scheduled Reports Endpoints ===
 
 @app.post("/api/reports")
-async def create_scheduled_report(request: CreateReportRequest):
+async def create_scheduled_report(
+    request: CreateReportRequest,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Create a new scheduled report"""
     try:
         if not mcp_client:
@@ -579,7 +598,7 @@ async def create_scheduled_report(request: CreateReportRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/reports")
-async def list_scheduled_reports(user_id: int = 1):
+async def list_scheduled_reports(current_user: User = Depends(get_current_user_dependency)):
     """List all scheduled reports for a user"""
     try:
         if not mcp_client:
@@ -587,7 +606,7 @@ async def list_scheduled_reports(user_id: int = 1):
         
         result = await mcp_client.call_tool(
             "list_scheduled_reports",
-            user_id=user_id
+            user_id=current_user.id
         )
         
         if result.get("error"):
@@ -618,7 +637,11 @@ async def list_scheduled_reports(user_id: int = 1):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/reports/{report_id}")
-async def update_scheduled_report(report_id: int, request: UpdateReportRequest):
+async def update_scheduled_report(
+    report_id: int, 
+    request: UpdateReportRequest,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Update a scheduled report"""
     try:
         if not mcp_client:
@@ -627,7 +650,7 @@ async def update_scheduled_report(report_id: int, request: UpdateReportRequest):
         result = await mcp_client.call_tool(
             "update_scheduled_report",
             report_id=report_id,
-            user_id=request.user_id,
+            user_id=current_user.id,
             name=request.name,
             description=request.description,
             schedule_cron=request.schedule_cron,
@@ -650,7 +673,10 @@ async def update_scheduled_report(report_id: int, request: UpdateReportRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/reports/{report_id}")
-async def delete_scheduled_report(report_id: int, user_id: int = 1):
+async def delete_scheduled_report(
+    report_id: int,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Delete a scheduled report"""
     try:
         if not mcp_client:
@@ -673,7 +699,10 @@ async def delete_scheduled_report(report_id: int, user_id: int = 1):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/reports/{report_id}/execute")
-async def execute_scheduled_report(report_id: int, user_id: int = 1):
+async def execute_scheduled_report(
+    report_id: int,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Execute a scheduled report immediately"""
     try:
         if not mcp_client:
@@ -682,7 +711,7 @@ async def execute_scheduled_report(report_id: int, user_id: int = 1):
         result = await mcp_client.call_tool(
             "trigger_report_now",
             report_id=report_id,
-            user_id=user_id
+            user_id=current_user.id
         )
         
         if result.get("error"):
@@ -707,7 +736,10 @@ async def execute_scheduled_report(report_id: int, user_id: int = 1):
 # Error handler
 
 @app.post("/api/export")
-async def export_query_results(request: ExportRequest):
+async def export_query_results(
+    request: ExportRequest,
+    current_user: User = Depends(get_current_user_dependency)
+):
     """Export query results in various formats (CSV, JSON, Excel)"""
     try:
         if not mcp_client:
@@ -717,7 +749,7 @@ async def export_query_results(request: ExportRequest):
             "export_query_results",
             query_id=request.query_id,
             format=request.format,
-            user_id=request.user_id
+            user_id=current_user.id
         )
         
         if result.get("error"):
@@ -821,8 +853,8 @@ async def list_database_tables():
             "tables": [
                 {
                     "name": t.get("name"),
-                    "rowCount": t.get("row_count"),
-                    "columnCount": t.get("column_count"),
+                    "rowCount": t.get("row_count", 0),
+                    "columnCount": t.get("column_count", 0),
                     "description": t.get("description")
                 }
                 for t in tables
@@ -850,22 +882,21 @@ async def get_table_schema(table_name: str):
             raise HTTPException(status_code=400, detail=result["error"])
         
         # Transform to camelCase for frontend
-        schema = result.get("schema", {})
         return {
-            "tableName": schema.get("table_name"),
+            "tableName": result.get("table_name"),
             "columns": [
                 {
                     "name": col.get("name"),
                     "type": col.get("type"),
-                    "nullable": col.get("nullable"),
-                    "primaryKey": col.get("primary_key"),
-                    "foreignKey": col.get("foreign_key"),
+                    "nullable": col.get("nullable", False),
+                    "primaryKey": col.get("name") in result.get("primary_keys", []),
+                    "foreignKey": any(fk.get("column") == col.get("name") for fk in result.get("foreign_keys", [])),
                     "defaultValue": col.get("default")
                 }
-                for col in schema.get("columns", [])
+                for col in result.get("columns", [])
             ],
-            "rowCount": schema.get("row_count"),
-            "sampleData": schema.get("sample_data", [])
+            "rowCount": 0,  # We'll calculate this separately if needed
+            "sampleData": []
         }
     
     except HTTPException:

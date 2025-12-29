@@ -39,3 +39,9 @@ httptools==0.7.1
 uvloop==0.22.1
 watchfiles==1.1.1
 uvicorn==0.38.0
+# Authentication dependencies
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.20
+bcrypt>=4.0.1
+requests==2.32.5
